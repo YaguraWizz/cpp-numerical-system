@@ -1,0 +1,65 @@
+name: CI/CD Pipeline (Build, Test, Demo, Artifacts)
+
+on:
+  push:
+    branches:
+      - main # или другая ветка, за которой вы хотите следить
+
+jobs:
+  build-test-demo:
+    runs-on: windows-latest # Указываем операционную систему для сборки
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4 # Шаг для получения исходного кода
+        with:
+          submodules: true # **Важно:** Убедиться, что подмодули инициализируются
+
+      - name: Setup MSVC Environment
+        uses: microsoft/setup-msbuild@v1.1 # Настройка среды MSVC
+
+      - name: Setup CMake
+        uses: jwlawson/actions-setup-cmake@v2 # Настройка CMake
+
+      - name: Configure CMake
+        # Конфигурация проекта в каталог сборки внутри рабочего пространства
+        run: cmake -B ${{github.workspace}}/build -A x64
+
+      - name: Build and Run Full Pipeline
+        # Переходим в каталог сборки и запускаем сборку цели full_run
+        # Это потянет за собой сборку всех зависимостей (библиотеки, exe тестов, exe демо)
+        # и затем выполнит команды, определенные в цели full_run (запуск тестов, затем демо)
+        run: |
+          cd ${{github.workspace}}/build
+          cmake --build . --config Release --target full_run
+
+      - name: Upload Run Output Artifact
+        # Вывод выполнения цели full_run будет в логах этого шага,
+        # GitHub Actions автоматически их собирает.
+        # Если вы перенаправляли вывод в файл в CMakeLists.txt, укажите путь к этому файлу.
+        # Если full_run просто выводит в stdout, то этот шаг опционален для логов,
+        # но нужен, если вы все же хотите отдельный файл артефакта.
+        # Оставим для примера, предполагая, что вы можете захотеть сохранить вывод в файл.
+        # Если full_run выводит прямо в консоль, и вы хотите сохранить этот вывод как артефакт,
+        # вам может потребоваться перенаправить вывод команды cmake --build ... в файл здесь.
+        # Пример:
+        # cd ${{github.workspace}}/build
+        # cmake --build . --config Release --target full_run > ${{github.workspace}}/full_run_output.log 2>&1
+        # Тогда путь ниже будет правильным.
+        uses: actions/upload-artifact@v4
+        with:
+          name: full-run-output
+          path: ${{github.workspace}}/full_run_output.log # Убедитесь, что этот файл создается
+          retention-days: 5 # Сколько дней хранить артефакт
+
+      - name: Upload Binaries Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: compiled-binaries
+          path: |
+            ${{github.workspace}}/build/bin/Release/* # Указываем путь с учетом конфигурации
+            ${{github.workspace}}/build/tests/Release/* # Указываем путь с учетом конфигурации
+            ${{github.workspace}}/build/Release/*.lib # Если библиотека собирается прямо в каталог конфигурации
+            # Добавьте сюда точные пути к вашей библиотеке и исполняемым файлам
+            # с учетом структуры каталогов сборки и конфигурации (Release/Debug и т.д.)
+          retention-days: 5 # Сколько дней хранить артефакт
